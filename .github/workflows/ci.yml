@@ -1,0 +1,64 @@
+name: CI Workflow
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  container-job:
+    runs-on: ubuntu-latest
+
+    container:
+      image: node:latest
+
+    services:
+      postgres:
+        image: postgres:10.8
+        env:
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_PORT:  ${{ secrets.DB_PORT }}
+          
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "latest"
+
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Install PostgreSQL client
+        run: apt-get update && apt-get install -y postgresql-client
+
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          until pg_isready -h postgres -p 5432 -U "${{ secrets.DB_USER }}"; do
+            echo "Waiting for PostgreSQL to be ready..."
+            sleep 2
+          done
+      
+
+      - name: Run Tests
+        env:
+          DB_NAME: webapp
+          DB_USER: postgres
+          DB_PASSWORD: root
+          DB_HOST: 192.168.10.1  # Use the service name
+          DB_PORT: 5432  # Default PostgreSQL port
+        run: |
+          npm test --coverage
+
+      - name: Upload coverage report
+        if: success()
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: coverage
